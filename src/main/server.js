@@ -21,7 +21,10 @@ const MAX_TASK_ATTACHMENTS = 5;
 const TRASH_RETENTION_DAYS = 15;
 const IMAGE_VIDEO_MIME = /^(image|video)\//;
 const GITHUB_REPO = "HanStrive/jira";
+const GITHUB_RAW_UPDATE_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/update.json`;
 const GITHUB_LATEST_RELEASE_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const GITHUB_TAGS_URL = `https://api.github.com/repos/${GITHUB_REPO}/tags?per_page=30`;
+const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
 
 function makeStorage(targetDir) {
   return multer.diskStorage({
@@ -37,11 +40,60 @@ function normalizeReleaseVersion(value) {
   return String(value || "").trim().replace(/^v/i, "");
 }
 
+function compareVersions(a, b) {
+  const left = normalizeReleaseVersion(a).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const right = normalizeReleaseVersion(b).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const next = left[i] || 0;
+    const current = right[i] || 0;
+    if (next > current) return 1;
+    if (next < current) return -1;
+  }
+  return 0;
+}
+
 function pickInstallerAsset(assets = []) {
   return assets.find((asset) => /setup.*\.exe$/i.test(asset.name || ""))
     || assets.find((asset) => /\.exe$/i.test(asset.name || ""))
-    || assets[0]
     || null;
+}
+
+function normalizeUpdateManifest(manifest, currentVersion, source) {
+  const version = normalizeReleaseVersion(manifest.version || manifest.tagName || currentVersion);
+  const hasUpdate = compareVersions(version, currentVersion) > 0;
+  const downloadUrl = String(manifest.downloadUrl || "");
+  return {
+    version,
+    currentVersion,
+    hasUpdate,
+    canDownload: Boolean(downloadUrl) && manifest.canDownload !== false,
+    needsReleaseAsset: hasUpdate && (!downloadUrl || manifest.needsReleaseAsset === true),
+    tagName: manifest.tagName || (version ? `v${version}` : ""),
+    releaseDate: manifest.releaseDate || now().slice(0, 10),
+    notes: manifest.notes || (hasUpdate ? "发现新版本。" : "当前已是最新版本。"),
+    downloadUrl,
+    pageUrl: manifest.pageUrl || GITHUB_RELEASES_URL,
+    assetName: manifest.assetName || "",
+    source,
+    force: Boolean(manifest.force)
+  };
+}
+
+async function getGithubRawUpdateManifest(currentVersion) {
+  const response = await fetch(`${GITHUB_RAW_UPDATE_URL}?t=${Date.now()}`, {
+    headers: {
+      Accept: "application/json",
+      "Cache-Control": "no-cache",
+      "User-Agent": "Gorilla-Jira-Updater"
+    }
+  });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub raw update check failed: ${response.status}`);
+  }
+  return normalizeUpdateManifest(await response.json(), currentVersion, "github-raw");
 }
 
 async function getGithubUpdateManifest(currentVersion) {
@@ -62,18 +114,65 @@ async function getGithubUpdateManifest(currentVersion) {
     return null;
   }
   const asset = pickInstallerAsset(release.assets || []);
-  return {
-    version: normalizeReleaseVersion(release.tag_name || release.name || currentVersion),
-    currentVersion,
+  const version = normalizeReleaseVersion(release.tag_name || release.name || currentVersion);
+  const hasUpdate = compareVersions(version, currentVersion) > 0;
+  return normalizeUpdateManifest({
+    version,
+    canDownload: Boolean(asset?.browser_download_url),
+    needsReleaseAsset: hasUpdate && !asset?.browser_download_url,
     tagName: release.tag_name || "",
     releaseDate: String(release.published_at || release.created_at || now()).slice(0, 10),
     notes: release.body || "发现新版本。",
     downloadUrl: asset?.browser_download_url || release.html_url || "",
-    pageUrl: release.html_url || `https://github.com/${GITHUB_REPO}/releases`,
+    pageUrl: release.html_url || GITHUB_RELEASES_URL,
     assetName: asset?.name || "",
-    source: "github",
     force: false
-  };
+  }, currentVersion, "github-release");
+}
+
+async function getGithubTagUpdateManifest(currentVersion) {
+  const response = await fetch(GITHUB_TAGS_URL, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "Gorilla-Jira-Updater"
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub tag check failed: ${response.status}`);
+  }
+  const tags = await response.json();
+  const latest = (Array.isArray(tags) ? tags : [])
+    .map((tag) => ({ ...tag, version: normalizeReleaseVersion(tag.name) }))
+    .filter((tag) => /^\d+(\.\d+){1,3}$/.test(tag.version))
+    .sort((a, b) => compareVersions(b.version, a.version))[0];
+
+  if (!latest) {
+    return null;
+  }
+
+  const hasUpdate = compareVersions(latest.version, currentVersion) > 0;
+  return normalizeUpdateManifest({
+    version: latest.version,
+    canDownload: false,
+    needsReleaseAsset: hasUpdate,
+    tagName: latest.name,
+    releaseDate: now().slice(0, 10),
+    notes: hasUpdate
+      ? "GitHub 已检测到新版本标签，但还没有可下载的 Release 安装包。"
+      : "当前已是最新版本。",
+    downloadUrl: "",
+    pageUrl: GITHUB_RELEASES_URL,
+    assetName: "",
+    force: false
+  }, currentVersion, "github-tag");
+}
+
+function getLocalUpdateManifest(paths, currentVersion) {
+  const manifestPath = path.resolve(paths.downloads, "app-update.json");
+  if (!fs.existsSync(manifestPath)) {
+    return null;
+  }
+  return normalizeUpdateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf-8")), currentVersion, "local");
 }
 
 async function startServer({ paths, port, getConfig, getAppVersion }) {
@@ -441,25 +540,63 @@ async function startServer({ paths, port, getConfig, getAppVersion }) {
 
   app.get("/api/app/update-manifest", async (_req, res) => {
     try {
-      const githubManifest = await getGithubUpdateManifest(getAppVersion());
-      if (githubManifest?.version) {
-        return res.json(githubManifest);
+      const rawManifest = await getGithubRawUpdateManifest(getAppVersion());
+      if (rawManifest?.version) {
+        return res.json(rawManifest);
       }
     } catch {
-      // Fall back to the local manifest so LAN deployments still work offline.
+      // Fall through to GitHub Releases, then tags, then local manifest.
     }
 
-    const manifestPath = path.join(paths.downloads, "app-update.json");
-    if (fs.existsSync(manifestPath)) {
-      return res.sendFile(manifestPath);
+    let releaseManifest = null;
+    try {
+      releaseManifest = await getGithubUpdateManifest(getAppVersion());
+      if (releaseManifest?.hasUpdate && releaseManifest.canDownload) {
+        return res.json(releaseManifest);
+      }
+    } catch {
+      // Try tags next, then fall back to the local manifest so LAN deployments still work offline.
     }
+
+    try {
+      const localManifest = getLocalUpdateManifest(paths, getAppVersion());
+      if (localManifest?.version && (localManifest.hasUpdate || !releaseManifest?.version)) {
+        return res.json(localManifest);
+      }
+    } catch {
+      // Try tags next.
+    }
+
+    try {
+      const tagManifest = await getGithubTagUpdateManifest(getAppVersion());
+      if (tagManifest?.version) {
+        if (tagManifest.hasUpdate) {
+          return res.json(tagManifest);
+        }
+        if (releaseManifest?.version) {
+          return res.json(releaseManifest);
+        }
+        return res.json(tagManifest);
+      }
+    } catch {
+      // Fall back to the local manifest.
+    }
+
+    if (releaseManifest?.version) {
+      return res.json(releaseManifest);
+    }
+
+    const currentVersion = getAppVersion();
     res.json({
-      version: getAppVersion(),
-      currentVersion: getAppVersion(),
+      version: currentVersion,
+      currentVersion,
+      hasUpdate: false,
+      canDownload: false,
+      needsReleaseAsset: false,
       releaseDate: now().slice(0, 10),
       notes: "当前已是最新版本。",
       downloadUrl: "",
-      pageUrl: `https://github.com/${GITHUB_REPO}/releases`,
+      pageUrl: GITHUB_RELEASES_URL,
       source: "local",
       force: false
     });

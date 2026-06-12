@@ -1692,7 +1692,8 @@ function SettingsPanel({ appInfo, config, user, serverBaseUrl, api, onSaveConfig
   const [checking, setChecking] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
-  const hasUpdate = Boolean(updateInfo?.version && appInfo?.version && isNewer(updateInfo.version, appInfo.version));
+  const hasUpdate = isUpdateAvailable(updateInfo, appInfo?.version);
+  const updateHint = getUpdateHint(updateInfo, appInfo?.version);
 
   useEffect(() => {
     let active = true;
@@ -1748,13 +1749,18 @@ function SettingsPanel({ appInfo, config, user, serverBaseUrl, api, onSaveConfig
     try {
       const result = await api.get("/api/app/update-manifest");
       setUpdateInfo(result);
-      if (isNewer(result.version, appInfo.version)) {
-        const targetUrl = result.downloadUrl || result.pageUrl;
+      if (isUpdateAvailable(result, appInfo.version)) {
+        const canDownload = result.canDownload !== false && Boolean(result.downloadUrl);
+        const targetUrl = canDownload ? result.downloadUrl : result.pageUrl;
         if (targetUrl) {
           await window.gorilla?.openExternal?.(targetUrl);
-          onMessage(`发现新版本 ${result.version}，已打开下载页面。`);
+          if (canDownload) {
+            onMessage(`发现新版本 ${result.version}，已打开安装包下载地址。`);
+          } else {
+            onMessage(`发现新版本 ${result.version}，但 GitHub Release 还没有上传安装包。`);
+          }
         } else {
-          onMessage(`发现新版本 ${result.version}，但未配置下载地址。`);
+          onMessage(`发现新版本 ${result.version}，但未配置更新地址。`);
         }
       } else {
         onMessage("当前已是最新版本。");
@@ -1836,10 +1842,10 @@ function SettingsPanel({ appInfo, config, user, serverBaseUrl, api, onSaveConfig
               <RoyalBadge type="settings" />
               <span>
                 <strong>软件版本</strong>
-                <small>{hasUpdate ? `发现 ${updateInfo.version}，点击下载更新` : `当前版本：${appInfo?.version || "dev"}`}</small>
+                <small>{updateHint}</small>
               </span>
               {hasUpdate && <i className="settings-update-dot" aria-label="有新版本" />}
-              {checking ? <RefreshCw className="spin" size={24} /> : hasUpdate ? <Download size={24} /> : <b>›</b>}
+              {checking ? <RefreshCw className="spin" size={24} /> : hasUpdate && updateInfo?.needsReleaseAsset ? <AlertTriangle size={24} /> : hasUpdate ? <Download size={24} /> : <b>›</b>}
             </button>
             <button className="settings-list-card" type="button" onClick={() => onMessage("用户协议与隐私政策页面将在后续版本补充。")}>
               <FileText size={34} />
@@ -2318,8 +2324,8 @@ function escapeSvg(value) {
 }
 
 function isNewer(remote, current) {
-  const a = String(remote || "0").split(".").map(Number);
-  const b = String(current || "0").split(".").map(Number);
+  const a = normalizeVersionValue(remote).split(".").map(Number);
+  const b = normalizeVersionValue(current).split(".").map(Number);
   for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
     const next = a[i] || 0;
     const old = b[i] || 0;
@@ -2327,6 +2333,28 @@ function isNewer(remote, current) {
     if (next < old) return false;
   }
   return false;
+}
+
+function normalizeVersionValue(value) {
+  return String(value || "0").trim().replace(/^v/i, "") || "0";
+}
+
+function isUpdateAvailable(updateInfo, currentVersion) {
+  if (!updateInfo?.version || !currentVersion) return false;
+  if (typeof updateInfo.hasUpdate === "boolean") {
+    return updateInfo.hasUpdate && isNewer(updateInfo.version, currentVersion);
+  }
+  return isNewer(updateInfo.version, currentVersion);
+}
+
+function getUpdateHint(updateInfo, currentVersion) {
+  if (!isUpdateAvailable(updateInfo, currentVersion)) {
+    return `当前版本：${currentVersion || "dev"}`;
+  }
+  if (updateInfo?.needsReleaseAsset || updateInfo?.canDownload === false || !updateInfo?.downloadUrl) {
+    return `发现 ${updateInfo.version}，请先上传 Release 安装包`;
+  }
+  return `发现 ${updateInfo.version}，点击下载更新`;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

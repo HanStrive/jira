@@ -1,6 +1,6 @@
 {
   "name": "gorilla-jira",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "A game-flavored desktop Jira for small game teams.",
   "main": "src/main/main.js",
   "author": "Gorilla Team",
