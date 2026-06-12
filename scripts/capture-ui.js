@@ -90,7 +90,7 @@ async function seedDemoData() {
 function registerIpc(paths, config) {
   ipcMain.handle("app:get-info", async () => ({
     name: "Gorilla Jira",
-    version: "1.0.13",
+    version: "1.0.14",
     isPackaged: false,
     serverPort: PORT,
     localIps: ["127.0.0.1"],
@@ -106,6 +106,11 @@ function registerIpc(paths, config) {
   ipcMain.handle("app:open-external", async () => true);
   ipcMain.handle("window:show-main", async () => true);
   ipcMain.handle("window:close", async () => true);
+  ipcMain.handle("app:quit", async () => true);
+  ipcMain.handle("floating:drag-start", async () => true);
+  ipcMain.handle("floating:drag-move", async () => true);
+  ipcMain.handle("floating:drag-end", async () => true);
+  ipcMain.handle("floating:show-menu", async () => true);
   ipcMain.handle("window:set-mode", async (event, mode) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window) return false;
@@ -194,7 +199,7 @@ app.whenReady().then(async () => {
     paths,
     port: PORT,
     getConfig: () => config,
-    getAppVersion: () => "1.0.13"
+    getAppVersion: () => "1.0.14"
   });
   registerIpc(paths, config);
 

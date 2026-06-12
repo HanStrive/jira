@@ -8,7 +8,12 @@ contextBridge.exposeInMainWorld("gorilla", {
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
   showMainWindow: () => ipcRenderer.invoke("window:show-main"),
   closeWindow: () => ipcRenderer.invoke("window:close"),
+  quitApp: () => ipcRenderer.invoke("app:quit"),
   setWindowMode: (mode) => ipcRenderer.invoke("window:set-mode", mode),
+  startFloatingDrag: (screenX, screenY) => ipcRenderer.invoke("floating:drag-start", screenX, screenY),
+  moveFloatingDrag: (screenX, screenY) => ipcRenderer.invoke("floating:drag-move", screenX, screenY),
+  endFloatingDrag: () => ipcRenderer.invoke("floating:drag-end"),
+  showFloatingMenu: () => ipcRenderer.invoke("floating:show-menu"),
   notifyUserChanged: (user) => ipcRenderer.invoke("user:changed", user),
   onUserChanged: (callback) => {
     const listener = (_event, user) => callback(user);

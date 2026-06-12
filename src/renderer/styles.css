@@ -5368,7 +5368,13 @@ body:has(.floating-root) #root {
   place-items: center;
   overflow: visible;
   background: transparent !important;
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.floating-root.dragging {
+  cursor: grabbing;
 }
 
 .floating-root .floating-card {

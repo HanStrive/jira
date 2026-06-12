@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
@@ -1948,6 +1948,16 @@ function FloatingApp() {
   const [token] = useState(localStorage.getItem(TOKEN_KEY) || "");
   const [user, setUser] = useState(readJson(USER_KEY));
   const [count, setCount] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragState = useRef({ active: false, moved: false, startX: 0, startY: 0 });
+
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = "";
+    return () => {
+      document.title = previousTitle;
+    };
+  }, []);
 
   useEffect(() => {
     window.gorilla?.getConfig?.().then((next) => {
@@ -2011,18 +2021,76 @@ function FloatingApp() {
     return null;
   }
 
-  function openMainWindow(event) {
-    event.preventDefault();
-    event.stopPropagation();
+  function openMainWindow() {
     window.gorilla?.showMainWindow?.();
   }
 
+  function handlePointerDown(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragState.current = {
+      active: true,
+      moved: false,
+      startX: event.screenX,
+      startY: event.screenY
+    };
+    window.gorilla?.startFloatingDrag?.(event.screenX, event.screenY);
+  }
+
+  function handlePointerMove(event) {
+    const state = dragState.current;
+    if (!state.active) return;
+    const delta = Math.hypot(event.screenX - state.startX, event.screenY - state.startY);
+    if (delta > 4) {
+      state.moved = true;
+      setDragging(true);
+    }
+    if (state.moved) {
+      event.preventDefault();
+      window.gorilla?.moveFloatingDrag?.(event.screenX, event.screenY);
+    }
+  }
+
+  function handlePointerUp(event) {
+    const state = dragState.current;
+    if (!state.active) return;
+    event.preventDefault();
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    window.gorilla?.endFloatingDrag?.();
+    dragState.current = { active: false, moved: false, startX: 0, startY: 0 };
+    setDragging(false);
+    if (!state.moved) {
+      openMainWindow();
+    }
+  }
+
+  function handleContextMenu(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    window.gorilla?.endFloatingDrag?.();
+    dragState.current = { active: false, moved: false, startX: 0, startY: 0 };
+    setDragging(false);
+    window.gorilla?.showFloatingMenu?.();
+  }
+
   return (
-    <main className="floating-root" role="button" tabIndex={0} onClick={openMainWindow} onKeyDown={(event) => {
+    <main
+      className={dragging ? "floating-root dragging" : "floating-root"}
+      role="button"
+      tabIndex={0}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onContextMenu={handleContextMenu}
+      onKeyDown={(event) => {
       if (event.key === "Enter" || event.key === " ") {
-        openMainWindow(event);
+        event.preventDefault();
+        openMainWindow();
       }
-    }}>
+    }}
+    >
       <div className="floating-card" aria-label="打开主界面">
         <Avatar src={absoluteUrl(serverBaseUrl, user?.avatarUrl)} name={user?.name || "未登录"} size="large" />
         <span>

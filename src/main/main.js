@@ -13,6 +13,7 @@ let serverState = null;
 let floatingTimer = null;
 let mainWindowMode = "main";
 let isQuitting = false;
+let floatingDrag = null;
 
 const MAIN_WINDOW_DEFAULT_WIDTH = 576;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 1024;
@@ -169,6 +170,7 @@ function createFloatingWindow() {
     resizable: false,
     transparent: true,
     skipTaskbar: true,
+    title: "",
     alwaysOnTop: config.floatingWindowAlwaysOnTop,
     focusable: true,
     webPreferences: {
@@ -179,9 +181,15 @@ function createFloatingWindow() {
   });
 
   floatingWindow.loadURL(getRendererUrl("#/floating"));
+  floatingWindow.setTitle("");
   floatingWindow.setVisibleOnAllWorkspaces(false);
+  floatingWindow.webContents.on("page-title-updated", (event) => {
+    event.preventDefault();
+    floatingWindow?.setTitle("");
+  });
   floatingWindow.on("closed", () => {
     floatingWindow = null;
+    floatingDrag = null;
   });
 }
 
@@ -242,6 +250,52 @@ function closeMainWindowByPreference() {
 function quitApp() {
   isQuitting = true;
   app.quit();
+}
+
+function clampFloatingPosition(x, y) {
+  if (!floatingWindow || floatingWindow.isDestroyed()) {
+    return { x, y };
+  }
+  const bounds = floatingWindow.getBounds();
+  const display = screen.getDisplayNearestPoint({ x, y });
+  const area = display.workArea;
+  return {
+    x: Math.min(Math.max(Math.round(x), area.x), area.x + area.width - bounds.width),
+    y: Math.min(Math.max(Math.round(y), area.y), area.y + area.height - bounds.height)
+  };
+}
+
+function startFloatingDrag(screenX, screenY) {
+  if (!floatingWindow || floatingWindow.isDestroyed()) return false;
+  const bounds = floatingWindow.getBounds();
+  floatingDrag = {
+    offsetX: Math.round(screenX) - bounds.x,
+    offsetY: Math.round(screenY) - bounds.y
+  };
+  return true;
+}
+
+function moveFloatingDrag(screenX, screenY) {
+  if (!floatingWindow || floatingWindow.isDestroyed() || !floatingDrag) return false;
+  const next = clampFloatingPosition(
+    Math.round(screenX) - floatingDrag.offsetX,
+    Math.round(screenY) - floatingDrag.offsetY
+  );
+  floatingWindow.setPosition(next.x, next.y, false);
+  return true;
+}
+
+function endFloatingDrag() {
+  floatingDrag = null;
+  return true;
+}
+
+function showFloatingContextMenu() {
+  if (!floatingWindow || floatingWindow.isDestroyed()) return false;
+  Menu.buildFromTemplate([
+    { label: "退出 Gorilla Jira", click: quitApp }
+  ]).popup({ window: floatingWindow });
+  return true;
 }
 
 function toggleFloatingWindow() {
@@ -325,6 +379,11 @@ function registerIpc() {
     return true;
   });
 
+  ipcMain.handle("app:quit", async () => {
+    quitApp();
+    return true;
+  });
+
   ipcMain.handle("window:close", async () => {
     closeMainWindowByPreference();
     return true;
@@ -337,6 +396,26 @@ function registerIpc() {
     }
     applyMainWindowMode(mode);
     return true;
+  });
+
+  ipcMain.handle("floating:drag-start", async (event, screenX, screenY) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== floatingWindow) return false;
+    return startFloatingDrag(screenX, screenY);
+  });
+
+  ipcMain.handle("floating:drag-move", async (event, screenX, screenY) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== floatingWindow) return false;
+    return moveFloatingDrag(screenX, screenY);
+  });
+
+  ipcMain.handle("floating:drag-end", async (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== floatingWindow) return false;
+    return endFloatingDrag();
+  });
+
+  ipcMain.handle("floating:show-menu", async (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== floatingWindow) return false;
+    return showFloatingContextMenu();
   });
 
   ipcMain.handle("user:changed", async (_event, user) => {
