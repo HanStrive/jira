@@ -1,8 +1,8 @@
 {
-  "version": "1.0.15",
+  "version": "1.0.16",
   "releaseDate": "2026-06-12",
   "notes": "Fix GitHub update badge and update click flow. The app checks this repository update.json first, then GitHub Releases, then tags, then local fallback.",
-  "downloadUrl": "https://github.com/HanStrive/jira/releases/download/v1.0.15/Gorilla%20Jira%20Setup%201.0.15.exe",
-  "pageUrl": "https://github.com/HanStrive/jira/releases/tag/v1.0.15",
+  "downloadUrl": "https://github.com/HanStrive/jira/releases/download/v1.0.16/Gorilla%20Jira%20Setup%201.0.16.exe",
+  "pageUrl": "https://github.com/HanStrive/jira/releases/tag/v1.0.16",
   "force": false
 }

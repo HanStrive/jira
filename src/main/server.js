@@ -93,7 +93,40 @@ async function getGithubRawUpdateManifest(currentVersion) {
   if (!response.ok) {
     throw new Error(`GitHub raw update check failed: ${response.status}`);
   }
-  return normalizeUpdateManifest(await response.json(), currentVersion, "github-raw");
+  const manifest = normalizeUpdateManifest(await response.json(), currentVersion, "github-raw");
+  if (manifest.hasUpdate && manifest.downloadUrl && !(await isDownloadUrlReachable(manifest.downloadUrl))) {
+    manifest.canDownload = false;
+    manifest.needsReleaseAsset = true;
+  }
+  return manifest;
+}
+
+async function isDownloadUrlReachable(downloadUrl) {
+  try {
+    const response = await fetch(downloadUrl, {
+      method: "HEAD",
+      redirect: "manual",
+      headers: { "User-Agent": "Gorilla-Jira-Updater" }
+    });
+    if ((response.status >= 200 && response.status < 400) || [301, 302, 303, 307, 308].includes(response.status)) {
+      return true;
+    }
+    if (response.status !== 405) {
+      return false;
+    }
+
+    const getResponse = await fetch(downloadUrl, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        Range: "bytes=0-0",
+        "User-Agent": "Gorilla-Jira-Updater"
+      }
+    });
+    return (getResponse.status >= 200 && getResponse.status < 400) || [301, 302, 303, 307, 308].includes(getResponse.status);
+  } catch {
+    return false;
+  }
 }
 
 async function getGithubUpdateManifest(currentVersion) {
