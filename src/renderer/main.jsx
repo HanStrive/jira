@@ -431,7 +431,6 @@ function RoyalFrame({ title, emblem = "shield", headerActions, onClose, children
           <RoyalBadge type={emblem} size="small" />
           <strong>{title}</strong>
         </div>
-        <div className="royal-frame-crown"><Crown size={46} /></div>
         <div className="royal-frame-actions">
           {headerActions}
           <button
@@ -972,7 +971,6 @@ function AuthScreen({ serverBaseUrl, setServerBaseUrl, loading, error, onSubmit,
             <div className="royal-mini-shield"><Crown size={25} /></div>
             <strong>登录</strong>
           </div>
-          <div className="royal-crown-top"><Crown size={44} /></div>
           <button className="royal-close" type="button" onClick={() => window.gorilla?.closeWindow?.()} title="关闭">
             <X size={34} />
           </button>

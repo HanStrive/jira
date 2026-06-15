@@ -90,7 +90,7 @@ async function seedDemoData() {
 function registerIpc(paths, config) {
   ipcMain.handle("app:get-info", async () => ({
     name: "Gorilla Jira",
-    version: "1.0.16",
+    version: "1.0.17",
     isPackaged: false,
     serverPort: PORT,
     localIps: ["127.0.0.1"],
@@ -199,7 +199,7 @@ app.whenReady().then(async () => {
     paths,
     port: PORT,
     getConfig: () => config,
-    getAppVersion: () => "1.0.16"
+    getAppVersion: () => "1.0.17"
   });
   registerIpc(paths, config);
 

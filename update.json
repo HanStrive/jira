@@ -1,8 +1,8 @@
 {
-  "version": "1.0.16",
-  "releaseDate": "2026-06-12",
-  "notes": "Fix GitHub update badge and update click flow. The app checks this repository update.json first, then GitHub Releases, then tags, then local fallback.",
-  "downloadUrl": "https://github.com/HanStrive/jira/releases/download/v1.0.16/Gorilla.Jira.Setup.1.0.16.exe",
-  "pageUrl": "https://github.com/HanStrive/jira/releases/tag/v1.0.16",
+  "version": "1.0.17",
+  "releaseDate": "2026-06-15",
+  "notes": "Remove the yellow crown decoration from the top center of every window.",
+  "downloadUrl": "https://github.com/HanStrive/jira/releases/download/v1.0.17/Gorilla.Jira.Setup.1.0.17.exe",
+  "pageUrl": "https://github.com/HanStrive/jira/releases/tag/v1.0.17",
   "force": false
 }
